@@ -81,7 +81,8 @@ plugins:
     # After the first login, copy the refresh token from the log and uncomment the line below.
     oauth:
       enabled: ${YT_OAUTH:false}
-      # refreshToken: "paste-your-refresh-token-here"
+      # After the first login, set YT_REFRESH_TOKEN (Render env var / .env) to the token from the log.
+      refreshToken: ${YT_REFRESH_TOKEN:}
 
   lavasrc:
     # When resolving a Spotify track, these searches are tried in order to find matching audio.
