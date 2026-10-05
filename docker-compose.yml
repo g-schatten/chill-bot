@@ -1,0 +1,76 @@
+# Private Discord music bot: Lavalink (audio) + yt-cipher (YouTube helper) + the Python bot.
+# Start everything:   docker compose up -d --build
+# Watch the logs:     docker compose logs -f bot lavalink
+
+name: musicbot
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # One-shot helper: the Lavalink container runs as uid 322 and must be able to
+  # write downloaded plugins into ./lavalink/plugins on the host.
+  lavalink-init:
+    image: busybox:1.36
+    command: ["sh", "-c", "chown -R 322:322 /plugins"]
+    volumes:
+      - ./lavalink/plugins:/plugins
+    restart: "no"
+
+  # Solves YouTube's signature/"n" challenges so the YouTube plugin can get audio URLs.
+  cipher:
+    build: https://github.com/kikkia/yt-cipher.git#master
+    restart: unless-stopped
+    environment:
+      API_TOKEN: ${CIPHER_PASSWORD:?Set CIPHER_PASSWORD in .env}
+      PORT: "8001"
+      # yt-cipher's README says only the IAS player variant works reliably right now.
+      OVERRIDE_PLAYER_VARIANT: IAS
+      OVERRIDE_SCRIPT_VARIANT: IAS
+    networks: [musicbot]
+    logging: *logging
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: unless-stopped
+    depends_on:
+      lavalink-init:
+        condition: service_completed_successfully
+      cipher:
+        condition: service_started
+    environment:
+      _JAVA_OPTIONS: "-Xmx${LAVALINK_HEAP:-1G}"
+      LAVALINK_PASSWORD: ${LAVALINK_PASSWORD:?Set LAVALINK_PASSWORD in .env}
+      CIPHER_PASSWORD: ${CIPHER_PASSWORD:?Set CIPHER_PASSWORD in .env}
+      YT_OAUTH: ${YT_OAUTH:-false}
+      SPOTIFY_ENABLED: ${SPOTIFY_ENABLED:-false}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_COUNTRY: ${SPOTIFY_COUNTRY:-US}
+      SPOTIFY_PREFER_ANON: ${SPOTIFY_PREFER_ANON:-false}
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - ./lavalink/plugins:/opt/Lavalink/plugins
+    ports:
+      # Bound to localhost only, so you can run the bot from your PC while developing.
+      # It is NOT reachable from the internet.
+      - "127.0.0.1:2333:2333"
+    networks: [musicbot]
+    logging: *logging
+
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    depends_on:
+      - lavalink
+    env_file: .env
+    environment:
+      LAVALINK_URI: http://lavalink:2333
+    networks: [musicbot]
+    logging: *logging
+
+networks:
+  musicbot:

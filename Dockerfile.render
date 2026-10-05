@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1
+#
+# ALL-IN-ONE image for hosts that run a single container (Render).
+# It runs three processes: yt-cipher, Lavalink and the Python bot (see render/start.sh).
+# For normal hosting use docker-compose.yml instead.
+
+############################ 1) yt-cipher, compiled to a single binary ############################
+# (Same steps as the yt-cipher project's own Dockerfile.)
+FROM denoland/deno:latest AS cipher
+WORKDIR /usr/src/app
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/kikkia/yt-cipher.git .
+ARG EJS_COMMIT=cd4e87f52e87ab6d8b318fd3a817adda6fafa8dc
+RUN git init ejs && cd ejs \
+    && git remote add origin https://github.com/yt-dlp/ejs.git \
+    && git fetch --depth 1 origin "$EJS_COMMIT" \
+    && git checkout --detach FETCH_HEAD
+RUN deno run --allow-read --allow-write ./scripts/patch-ejs.ts
+RUN rm -rf ./ejs/.git ./ejs/node_modules || true
+RUN deno compile --no-check --output server \
+    --allow-net --allow-read --allow-write --allow-env \
+    --include worker.ts server.ts
+
+############################ 2) runtime: Java (Lavalink) + Python (bot) ###########################
+FROM eclipse-temurin:21-jre-noble
+
+ARG LAVALINK_VERSION=4.2.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-venv curl ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1001 app
+
+# --- Lavalink
+WORKDIR /opt/Lavalink
+RUN curl -fsSL -o Lavalink.jar \
+    "https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar"
+COPY lavalink/application.yml /opt/Lavalink/application.yml
+
+# --- yt-cipher binary (+ the folders it expects next to it)
+WORKDIR /opt/cipher
+COPY --from=cipher /usr/src/app/server /opt/cipher/server
+COPY --from=cipher /usr/src/app/docs /opt/cipher/docs
+RUN mkdir -p /opt/cipher/player_cache
+
+# --- Python bot
+WORKDIR /app
+COPY bot/requirements.txt .
+RUN python3 -m venv /app/venv && /app/venv/bin/pip install --no-cache-dir -r requirements.txt
+COPY bot/ /app/
+
+# --- start scripts
+COPY render/start.sh render/prewarm.sh /app/render/
+RUN chmod +x /app/render/*.sh
+
+# Download Lavalink's plugins now, so every (slow, 0.1 CPU) start on Render doesn't have to.
+# Failure here is not fatal: Lavalink would simply download them at boot instead.
+RUN /app/render/prewarm.sh || true
+
+RUN chown -R app:app /opt/Lavalink /opt/cipher /app
+USER app
+
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/render/start.sh"]

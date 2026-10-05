@@ -1,0 +1,138 @@
+# Lavalink v4 configuration.
+# Values like ${NAME:default} come from the environment (set via docker-compose.yml / .env).
+
+server:
+  port: 2333
+  address: 0.0.0.0
+
+lavalink:
+  plugins:
+    # YouTube source. IMPORTANT: this is a *snapshot* build (a specific commit), because the
+    # last tagged release (1.18.2) stopped working when YouTube started forcing SABR-only
+    # responses in Sept 2026. When a newer tagged release than 1.18.2 appears at
+    # https://github.com/lavalink-devs/youtube-source/releases, switch to it:
+    #   dependency: "dev.lavalink.youtube:youtube-plugin:<VERSION>"   and   snapshot: false
+    - dependency: "dev.lavalink.youtube:youtube-plugin:f45bbb7aebfcbc1c553769e04af6cd43afa8b7c3"
+      snapshot: true
+    # Spotify (and friends): reads Spotify links and finds the matching audio on YouTube.
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+  pluginsDir: ./plugins
+  server:
+    password: ${LAVALINK_PASSWORD}
+    sources:
+      # The built-in YouTube source MUST be off when using the youtube plugin.
+      youtube: false
+      bandcamp: true
+      soundcloud: true
+      twitch: false
+      vimeo: false
+      http: false
+      local: false
+    filters:
+      volume: true
+      equalizer: true
+      karaoke: true
+      timescale: true
+      tremolo: true
+      vibrato: true
+      distortion: true
+      rotation: true
+      channelMix: true
+      lowPass: true
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: LOW
+    trackStuckThresholdMs: 10000
+    useSeekGhosting: true
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
+    youtubeSearchEnabled: true
+    soundcloudSearchEnabled: true
+    gc-warnings: true
+    # Raise these if you see read-timeout errors from the cipher server.
+    timeouts:
+      connectTimeoutMs: 10000
+      connectionRequestTimeoutMs: 10000
+      socketTimeoutMs: 10000
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    # Clients are tried in this order. If one fails, the next one is tried.
+    # MUSIC is search-only (powers "ytmsearch:", which finds official audio first).
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - TVHTML5_SIMPLY
+      - WEB
+      - WEBEMBEDDED
+      - TV
+    # Self-hosted cipher server (the "cipher" container in docker-compose.yml).
+    remoteCipher:
+      url: ${CIPHER_URL:http://cipher:8001}
+      password: ${CIPHER_PASSWORD}
+      userAgent: "private-music-bot"
+    # Optional YouTube sign-in with a THROWAWAY Google account. Set YT_OAUTH=true in .env, then
+    # watch `docker compose logs -f lavalink` for a code to enter at google.com/device.
+    # After the first login, copy the refresh token from the log and uncomment the line below.
+    oauth:
+      enabled: ${YT_OAUTH:false}
+      # refreshToken: "paste-your-refresh-token-here"
+
+  lavasrc:
+    # When resolving a Spotify track, these searches are tried in order to find matching audio.
+    providers:
+      - "ytmsearch:\"%ISRC%\""
+      - "ytmsearch:%QUERY%"
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: ${SPOTIFY_ENABLED:false}
+      applemusic: false
+      deezer: false
+      yandexmusic: false
+      flowerytts: false
+      youtube: false
+      vkmusic: false
+    spotify:
+      clientId: ${SPOTIFY_CLIENT_ID:}
+      clientSecret: ${SPOTIFY_CLIENT_SECRET:}
+      countryCode: ${SPOTIFY_COUNTRY:US}
+      playlistLoadLimit: 2   # pages of 100 tracks  -> max 200 tracks per playlist
+      albumLoadLimit: 2      # pages of 50 tracks   -> max 100 tracks per album
+      resolveArtistsInSearch: false
+      localFiles: false
+      preferAnonymousToken: ${SPOTIFY_PREFER_ANON:false}
+
+metrics:
+  prometheus:
+    enabled: false
+    endpoint: /metrics
+
+sentry:
+  dsn: ""
+  environment: ""
+
+logging:
+  file:
+    path: ./logs/
+  level:
+    root: INFO
+    lavalink: INFO
+    # Shows the sign-in code during the YouTube OAuth flow.
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
+  request:
+    enabled: true
+    includeClientInfo: true
+    includeHeaders: false
+    includeQueryString: true
+    includePayload: true
+    maxPayloadLength: 10000
+  logback:
+    rollingpolicy:
+      max-file-size: 1GB
+      max-history: 30

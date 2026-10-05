@@ -1,0 +1,31 @@
+# Render Blueprint (optional): New + -> Blueprint -> pick your repo.
+# You can also create the service by hand in the dashboard, see RENDER.md.
+services:
+  - type: web
+    name: musicbot
+    runtime: docker
+    plan: free
+    region: singapore          # closest Render region to Bangladesh
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
+    # No healthCheckPath on purpose: the first boot takes minutes on the free plan and a
+    # failing health check during deploy would roll the deploy back.
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false            # Render asks you for the value
+      - key: GUILD_IDS
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: LAVALINK_PASSWORD
+        generateValue: true
+      - key: CIPHER_PASSWORD
+        generateValue: true
+      - key: LAVALINK_HEAP_MB
+        value: "200"
+      - key: LAVALINK_CONNECT_ATTEMPTS
+        value: "60"
+      - key: DEFAULT_VOLUME
+        value: "60"
+      - key: SPOTIFY_ENABLED
+        value: "false"
